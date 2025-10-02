@@ -17,6 +17,33 @@ export function profileImageUrlUpload () {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (req.body.imageUrl !== undefined) {
       const url = req.body.imageUrl
+      // Prevent SSRF: only allow HTTPS URLs for images from a set of allowed domains
+      let parsedUrl
+      try {
+        parsedUrl = new URL(url)
+      } catch (err) {
+        next(new Error('Invalid URL for profile image.'))
+        return
+      }
+      // Allowlist of hostnames images can be sourced from
+      const allowedHosts = [
+        'images.example.com', // Replace with allowed hosted domains
+        'cdn.example.com'
+      ]
+      // Block IP literal addresses, localhost, and require https protocol
+      // You may need to adjust allowedHosts as per your context
+      const isIpAddress = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(parsedUrl.hostname) || /^\[.*\]$/.test(parsedUrl.hostname)
+      if (
+        parsedUrl.protocol !== 'https:' ||
+        isIpAddress ||
+        parsedUrl.hostname === 'localhost' ||
+        parsedUrl.hostname === '127.0.0.1' ||
+        parsedUrl.hostname === '::1' ||
+        !allowedHosts.includes(parsedUrl.hostname)
+      ) {
+        next(new Error('Blocked potentially unsafe profile image URL.'))
+        return
+      }
       if (url.match(/(.)*solve\/challenges\/server-side(.)*/) !== null) req.app.locals.abused_ssrf_bug = true
       const loggedInUser = security.authenticatedUsers.get(req.cookies.token)
       if (loggedInUser) {
